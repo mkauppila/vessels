@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strconv"
+	"strings"
 	"time"
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
@@ -27,7 +29,13 @@ func (m Message) String() string {
 	return fmt.Sprintf("%d of type %s", m.Mmsi, m.MessageType)
 }
 
-const channelName = "vessels/#"
+func mmsisToBeTracked(commaSeparatedMmsis string) (mmsis []int) {
+	for _, mmsi := range strings.Split(commaSeparatedMmsis, ",") {
+		number, _ := strconv.ParseInt(strings.Trim(mmsi, " "), 10, 32)
+		mmsis = append(mmsis, int(number))
+	}
+	return
+}
 
 
 func messageHandler(client mqtt.Client, message mqtt.Message) {
@@ -37,6 +45,14 @@ func messageHandler(client mqtt.Client, message mqtt.Message) {
 	fmt.Printf("\nReceived message: %v\n", msg)
 
 	// checkout the message type and pass it forward to something
+}
+
+func allTopicsWithQos(mmsis []int) map[string]byte {
+	topics := make(map[string]byte, 10)
+	for _, mmsi := range mmsis {
+		topics[fmt.Sprintf("vessels/%d/locations", mmsi)] = 0
+	}
+	return topics
 }
 
 func main() {
@@ -56,7 +72,12 @@ func main() {
 	}
 
 	fmt.Println("Subscribe to all Vessels")
-	if token := client.Subscribe(channelName, 0, messageHandler); token.Wait() && token.Error() != nil {
+
+	vessels := mmsisToBeTracked(os.Getenv("MMSIS_TO_TRACK"))
+	for topic := range allTopicsWithQos(vessels) {
+		println(topic)
+	}
+	if token := client.SubscribeMultiple(allTopicsWithQos(vessels), messageHandler); token.Wait() && token.Error() != nil {
 		panic(token.Error())
 	}
 
@@ -66,7 +87,9 @@ func main() {
 	go func() {
 		select {
 		case <-signalChannel:
-			client.Unsubscribe(channelName)
+			for topic := range allTopicsWithQos(vessels) {
+				client.Unsubscribe(topic)
+			}
 			const disconnectTimeInMs uint = 1000
 			client.Disconnect(disconnectTimeInMs)
 			fmt.Println("Disconnected and closed")
