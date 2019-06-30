@@ -30,14 +30,13 @@ func vesselsToBeTracked(commaSeparatedMmsis string) (mmsis []int) {
 	for _, mmsi := range strings.Split(commaSeparatedMmsis, ",") {
 		number, err := strconv.ParseInt(strings.Trim(mmsi, " "), 10, 32)
 		if err != nil {
-			fmt.Printf("Faulty mssi detected: %s. Skipping it...", mmsi)
+			fmt.Printf("Faulty mssi detected: %s. Skipping it...\n", mmsi)
 		} else {
 			mmsis = append(mmsis, int(number))
 		}
 	}
 	return
 }
-
 
 func allTopicsWithQos(mmsis []int) map[string]byte {
 	topics := make(map[string]byte, 10)
