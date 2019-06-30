@@ -13,26 +13,30 @@ import (
 	"github.com/joho/godotenv"
 )
 
-// Message ...
-type Message struct {
+type positionMessage struct {
 	Mmsi        int
 	MessageType string `json:"type"`
 	Geometry    struct {
 		GeometryType string `json:"type"`
 		Coordinates  []float32
 	}
+	Heading  float32
+	Timestap uint32 `json:"timestampExternal"`
 }
 
-// String ...
-func (m Message) String() string {
+func (m positionMessage) String() string {
 	// return fmt.Sprintf("%v (%v years)", p.Name, p.Age)
-	return fmt.Sprintf("%d of type %s", m.Mmsi, m.MessageType)
+	return fmt.Sprintf("%d location is", m.Mmsi)
 }
 
-func mmsisToBeTracked(commaSeparatedMmsis string) (mmsis []int) {
+func vesselsToBeTracked(commaSeparatedMmsis string) (mmsis []int) {
 	for _, mmsi := range strings.Split(commaSeparatedMmsis, ",") {
-		number, _ := strconv.ParseInt(strings.Trim(mmsi, " "), 10, 32)
-		mmsis = append(mmsis, int(number))
+		number, err := strconv.ParseInt(strings.Trim(mmsi, " "), 10, 32)
+		if err != nil {
+			fmt.Printf("Faulty mssi detected: %s. Skipping it...", mmsi)
+		} else {
+			mmsis = append(mmsis, int(number))
+		}
 	}
 	return
 }
@@ -40,11 +44,9 @@ func mmsisToBeTracked(commaSeparatedMmsis string) (mmsis []int) {
 
 func messageHandler(client mqtt.Client, message mqtt.Message) {
 	fmt.Printf("Received message: %s", message.Payload())
-	var msg Message
+	var msg positionMessage
 	_ = json.Unmarshal(message.Payload(), &msg)
 	fmt.Printf("\nReceived message: %v\n", msg)
-
-	// checkout the message type and pass it forward to something
 }
 
 func allTopicsWithQos(mmsis []int) map[string]byte {
@@ -58,7 +60,7 @@ func allTopicsWithQos(mmsis []int) map[string]byte {
 func main() {
 	godotenv.Load()
 
-	fmt.Println("Creating a WebSocket client")
+	fmt.Println("Starting up...")
 
 	opts := mqtt.NewClientOptions()
 	opts.AddBroker(os.Getenv("TRAFI_URL"))
@@ -71,12 +73,9 @@ func main() {
 		panic(token.Error())
 	}
 
-	fmt.Println("Subscribe to all Vessels")
+	vessels := vesselsToBeTracked(os.Getenv("VESSELS_TO_TRACK"))
+	fmt.Println("Subscribe to vessels: ", vessels)
 
-	vessels := mmsisToBeTracked(os.Getenv("MMSIS_TO_TRACK"))
-	for topic := range allTopicsWithQos(vessels) {
-		println(topic)
-	}
 	if token := client.SubscribeMultiple(allTopicsWithQos(vessels), messageHandler); token.Wait() && token.Error() != nil {
 		panic(token.Error())
 	}
@@ -92,7 +91,7 @@ func main() {
 			}
 			const disconnectTimeInMs uint = 1000
 			client.Disconnect(disconnectTimeInMs)
-			fmt.Println("Disconnected and closed")
+			fmt.Println("Unsubscribed all the topics and disconnected the client")
 
 			exitChannel <- true
 		}
@@ -101,7 +100,6 @@ func main() {
 	select {
 	case shouldExit := <-exitChannel:
 		if shouldExit {
-			fmt.Println("Bye bye!")
 			os.Exit(0)
 		}
 	}
