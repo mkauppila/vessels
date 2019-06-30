@@ -20,8 +20,10 @@ type positionMessage struct {
 		GeometryType string `json:"type"`
 		Coordinates  []float32
 	}
-	Heading  float32
-	Timestap uint32 `json:"timestampExternal"`
+	Properties struct {
+		Heading   float32
+		Timestamp uint64 `json:"timestampExternal"`
+	}
 }
 
 func (m positionMessage) String() string {
@@ -42,19 +44,22 @@ func vesselsToBeTracked(commaSeparatedMmsis string) (mmsis []int) {
 }
 
 
-func messageHandler(client mqtt.Client, message mqtt.Message) {
-	fmt.Printf("Received message: %s", message.Payload())
-	var msg positionMessage
-	_ = json.Unmarshal(message.Payload(), &msg)
-	fmt.Printf("\nReceived message: %v\n", msg)
-}
-
 func allTopicsWithQos(mmsis []int) map[string]byte {
 	topics := make(map[string]byte, 10)
 	for _, mmsi := range mmsis {
 		topics[fmt.Sprintf("vessels/%d/locations", mmsi)] = 0
 	}
 	return topics
+}
+
+func messageHandler(client mqtt.Client, message mqtt.Message) {
+	var msg positionMessage
+	err := json.Unmarshal(message.Payload(), &msg)
+	if err != nil {
+		fmt.Println("Failed to marshal message: ", message)
+	}
+	lat, lon := msg.Geometry.Coordinates[0], msg.Geometry.Coordinates[1]
+	fmt.Printf("%v - %v at (%g, %g)\n", msg.Properties.Timestamp, msg.Mmsi, lat, lon)
 }
 
 func main() {
